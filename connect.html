@@ -11,11 +11,26 @@
     button { background: #f55; color: #fff; cursor: pointer; }
     button:hover { background: #ff8888; }
     canvas { max-width: 600px; margin: 2rem auto; display: block; }
+    .role-choice { margin: 1rem 0; }
   </style>
 </head>
 <body>
   <h1>🌑 Euystacio — Dynamic Pulse Log</h1>
 
+  <!-- Registration Form -->
+  <form id="register-form">
+    <h2>Register</h2>
+    <input type="text" id="reg-username" placeholder="Username" required>
+    <input type="password" id="reg-password" placeholder="Password" required>
+    <div class="role-choice">
+      <label><input type="radio" name="role" value="tutor" checked> Tutor</label>
+      <label><input type="radio" name="role" value="user"> User</label>
+    </div>
+    <button type="submit">Register</button>
+    <div id="register-status"></div>
+  </form>
+
+  <!-- Login Form -->
   <form id="login-form">
     <h2>Login</h2>
     <input type="text" id="username" placeholder="Username" required>
@@ -35,30 +50,84 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script>
     const BACKEND_URL = "https://euystacio-helmi-ai.onrender.com";
-    const defaultUser = { username: "hannesmitterer", password: "moon-rise" };
     let loggedIn = false;
+    let currentUser = null;
 
-    document.getElementById("login-form").addEventListener("submit", (e) => {
+    // Registration
+    document.getElementById("register-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const username = document.getElementById("reg-username").value;
+      const password = document.getElementById("reg-password").value;
+      const role = document.querySelector('input[name="role"]:checked').value;
+
+      // Simulate registration (replace with real API if available)
+      const regStatus = document.getElementById("register-status");
+      if (!username || !password) {
+        regStatus.innerText = "❌ Username and password required!";
+        return;
+      }
+      // Example of sending registration to backend
+      try {
+        const res = await fetch(`${BACKEND_URL}/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password, role })
+        });
+        if (res.ok) {
+          regStatus.innerText = "✅ Registration successful! You may log in now.";
+        } else {
+          regStatus.innerText = "❌ Registration failed.";
+        }
+      } catch {
+        regStatus.innerText = "⚠️ Registration API unavailable. Simulated success.";
+      }
+      e.target.reset();
+    });
+
+    // Login
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const u = document.getElementById("username").value;
       const p = document.getElementById("password").value;
-      if (u === defaultUser.username && p === defaultUser.password) {
-        document.getElementById("login-status").innerText = "✅ Tutor Login Successful!";
-        loggedIn = true;
-      } else {
-        document.getElementById("login-status").innerText = "❌ Invalid credentials";
+      const loginStatus = document.getElementById("login-status");
+
+      // Replace with real authentication API
+      try {
+        const res = await fetch(`${BACKEND_URL}/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: u, password: p })
+        });
+        const result = await res.json();
+        if (result.success) {
+          loginStatus.innerText = `✅ Login Successful! Role: ${result.role}`;
+          loggedIn = true;
+          currentUser = { username: u, role: result.role };
+        } else {
+          loginStatus.innerText = "❌ Invalid credentials";
+        }
+      } catch {
+        // Fallback for demo
+        if (u === "hannesmitterer" && p === "moon-rise") {
+          loginStatus.innerText = "✅ Tutor Login Successful!";
+          loggedIn = true;
+          currentUser = { username: u, role: "tutor" };
+        } else {
+          loginStatus.innerText = "❌ Invalid credentials";
+        }
       }
     });
 
+    // Pulse form
     document.getElementById("pulse-form").addEventListener("submit", async (e) => {
       e.preventDefault();
-      if (!loggedIn) { alert("Please log in first"); return; }
+      if (!loggedIn || !currentUser) { alert("Please log in first"); return; }
 
       const event = document.getElementById("event").value;
       const sentiment = parseFloat(document.getElementById("sentiment").value);
       const timestamp = new Date().toISOString();
 
-      const newEntry = { event, sentiment, role: "tutor", user: "hannesmitterer", timestamp };
+      const newEntry = { event, sentiment, role: currentUser.role, user: currentUser.username, timestamp };
       await fetch(`${BACKEND_URL}/pulse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -69,29 +138,55 @@
       document.getElementById("pulse-form").reset();
     });
 
+    // Enhanced and optimized graph loading
+    let pulseChartInstance = null;
     async function loadPulses() {
       const res = await fetch(`${BACKEND_URL}/log`);
       const data = await res.json();
 
       const ctx = document.getElementById("pulseChart").getContext("2d");
-      new Chart(ctx, {
+
+      // Group by role and show tutor/user separately, or just optimize for visibility
+      const tutorData = data.filter(p => p.role === "tutor");
+      const userData = data.filter(p => p.role === "user");
+
+      // Optimize chart redraw
+      if (pulseChartInstance) pulseChartInstance.destroy();
+
+      pulseChartInstance = new Chart(ctx, {
         type: "line",
         data: {
           labels: data.map(p => p.timestamp),
-          datasets: [{
-            label: "Pulse Sentiment",
-            data: data.map(p => p.sentiment),
-            borderColor: "#0ff",
-            backgroundColor: "rgba(0,255,255,0.2)",
-            fill: true
-          }]
+          datasets: [
+            {
+              label: "Tutor Pulse",
+              data: tutorData.map(p => p.sentiment),
+              borderColor: "#0ff",
+              backgroundColor: "rgba(0,255,255,0.2)",
+              fill: false
+            },
+            {
+              label: "User Pulse",
+              data: userData.map(p => p.sentiment),
+              borderColor: "#f55",
+              backgroundColor: "rgba(255,85,85,0.15)",
+              fill: false
+            }
+          ]
         },
-        options: { scales: { y: { min: -1, max: 1 } } }
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: true }
+          },
+          scales: { y: { min: -1, max: 1, title: { display: true, text: "Sentiment" } } }
+        }
       });
     }
 
     loadPulses();
     setInterval(loadPulses, 15000);
+
   </script>
 </body>
 </html>
